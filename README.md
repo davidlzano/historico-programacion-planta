@@ -1,5 +1,7 @@
 # Histórico versionado de programación de planta
 
+![Architecture](docs/architecture.png)
+
 Respaldo diario de un archivo de programación editado a mano, y consolidación de esos respaldos en una base única con línea de tiempo consultable.
 
 Este repositorio es una **reimplementación demostrativa** de un sistema que puse en producción sobre la programación de 22 centros de trabajo. El código aquí publicado es original, trabaja con datos sintéticos y no contiene información de la empresa.
