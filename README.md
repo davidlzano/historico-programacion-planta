@@ -1,89 +1,89 @@
-# Histórico versionado de programación de planta
+# Versioned Production Schedule History
 
 ![Architecture](docs/architecture.png)
 
-Respaldo diario de un archivo de programación editado a mano, y consolidación de esos respaldos en una base única con línea de tiempo consultable.
+Daily backup of a hand-edited scheduling file, and consolidation of those backups into a single database with a queryable timeline.
 
-Este repositorio es una **reimplementación demostrativa** de un sistema que puse en producción sobre la programación de 22 centros de trabajo. El código aquí publicado es original, trabaja con datos sintéticos y no contiene información de la empresa.
+This repository is a **demo reimplementation** of a system I put into production over the schedule of 22 work centers. The code published here is original, works with synthetic data, and contains no company information.
 
 ---
 
-## El problema
+## The problem
 
-La programación de producción vivía en un solo archivo de Excel, editado a diario por varias personas. Ese archivo tenía dos características incómodas:
+The production schedule lived in a single Excel file, edited daily by several people. That file had two uncomfortable characteristics:
 
-**No había historia.** Solo existía el estado de hoy. Preguntas como "¿qué habíamos programado para esta OP la semana pasada?" o "¿cuántas veces se ha reprogramado esta máquina?" no tenían respuesta, porque el dato anterior se sobrescribía.
+**There was no history.** Only today's state existed. Questions such as "what had we scheduled for this order last week?" or "how many times has this machine been rescheduled?" had no answer, because the previous data was overwritten.
 
-**No había red de seguridad.** Un archivo compartido que edita mucha gente termina rompiéndose.
+**There was no safety net.** A shared file edited by many people ends up breaking.
 
-Eso segundo dejó de ser hipotético. El 31 de agosto alguien eliminó una columna y dejó 1.850 celdas con referencias rotas, destruyendo la secuencia de programación de las dos máquinas principales. Se pudo reconstruir porque existía el respaldo de dos días antes.
+That second point stopped being hypothetical. On August 31 someone deleted a column and left 1,850 cells with broken references, destroying the scheduling sequence of the two main machines. It could be rebuilt because the backup from two days earlier existed.
 
-## El enfoque
+## The approach
 
-Dos piezas que se complementan.
+Two pieces that complement each other.
 
-### 1. Respaldo diario
+### 1. Daily backup
 
-Una tarea programada copia el archivo cada mañana a una carpeta de histórico, organizada automáticamente por mes y año. Reintenta si el archivo está abierto en ese momento, y registra en el log el contexto de ejecución completo.
+A scheduled task copies the file every morning to a history folder, automatically organized by month and year. It retries if the file is open at that moment, and writes the full execution context to the log.
 
-Ese detalle del contexto no es decorativo: cuando una tarea programada falla en un servidor, saber con qué usuario e intérprete corrió suele ser la diferencia entre resolverlo en minutos o pasar la tarde adivinando.
+That detail about context is not decorative: when a scheduled task fails on a server, knowing which user and interpreter it ran under is usually the difference between solving it in minutes or spending the afternoon guessing.
 
-### 2. Consolidación con versionado
+### 2. Consolidation with versioning
 
-Los respaldos por sí solos son una carpeta con cientos de archivos. La segunda pieza los convierte en una base consultable con dos capas:
+The backups on their own are a folder with hundreds of files. The second piece turns them into a queryable database with two layers:
 
-| Hoja | Contenido |
+| Sheet | Contents |
 |---|---|
-| `VIGENTE` | El estado actual de cada registro. La tabla para consultar y relacionar. |
-| `HISTORICO` | Una fila cada vez que un registro nace o cambia. |
-| `AVISOS` | Hojas que no se pudieron leer. La que hay que revisar. |
+| `VIGENTE` | The current state of each record. The table to query and join. |
+| `HISTORICO` | One row each time a record is born or changes. |
+| `AVISOS` | Sheets that could not be read. The one to review. |
 
 ---
 
-## Las tres decisiones que sostienen el sistema
+## The three decisions that hold the system up
 
-### Mapeo por nombre de encabezado, no por posición
+### Mapping by header name, not by position
 
-El archivo origen lo edita a mano el área de producción. Las columnas se mueven, se renombran y aparecen nuevas. Un mismo campo aparece como `TIROS`, `CANTIDAD` o `CANTIDAD PEDIDA` según quién editó la hoja, y el encabezado no siempre está en la fila 1.
+The source file is edited by hand by the production area. Columns move, get renamed, and new ones appear. The same field shows up as `TIROS`, `CANTIDAD` or `CANTIDAD PEDIDA` depending on who edited the sheet, and the header is not always in row 1.
 
-Leer por posición funciona hasta el primer día en que alguien inserta una columna. A partir de ahí carga datos en el campo equivocado **sin lanzar ningún error**, que es la peor forma de fallar: nadie se entera hasta que alguien nota que las cifras no cuadran, semanas después.
+Reading by position works until the first day someone inserts a column. From then on it loads data into the wrong field **without raising any error**, which is the worst way to fail: nobody finds out until someone notices the figures do not add up, weeks later.
 
-El consolidador mantiene una lista de sinónimos por campo, busca la fila de encabezados en las primeras doce, e ignora los encabezados que no reconoce en lugar de romper la carga.
+The consolidator keeps a synonym list per field, looks for the header row in the first twelve, and ignores headers it does not recognize instead of breaking the load.
 
-### Histórico por cambios, no por fotos completas
+### History by changes, not by full snapshots
 
-Guardar la foto entera de cada día es simple de leer y satura el límite de filas de Excel en cerca de un año. Guardar solo cuando algo nace o cambia conserva exactamente la misma información: para saber cómo estaba un registro en cualquier fecha, se toma su última versión con snapshot menor o igual a esa fecha.
+Storing the entire snapshot of each day is simple to read and hits Excel's row limit in about a year. Storing only when something is born or changes preserves exactly the same information: to know how a record stood on any date, take its latest version with a snapshot less than or equal to that date.
 
-Lo que decide qué cuenta como "cambio" son los campos de negocio. Los de trazabilidad —fecha del snapshot, archivo de origen— quedan fuera a propósito. Si estuvieran incluidos, cada día generaría una versión nueva de absolutamente todo y el modo dejaría de servir.
+What decides what counts as a "change" are the business fields. The traceability ones — snapshot date, source file — are left out on purpose. If they were included, every day would generate a new version of absolutely everything and the approach would stop being useful.
 
-En este repositorio, con veinte días simulados, la reducción ronda el **34%**. Sobre la programación real, que cambia bastante menos entre días, fue del **82%** conservando el mismo histórico.
+In this repository, with twenty simulated days, the reduction is around **34%**. On the real schedule, which changes far less between days, it was **82%** while keeping the same history.
 
-### Una hoja ilegible no es una fila borrada
+### An unreadable sheet is not a deleted row
 
-Esta es la parte fina.
+This is the subtle part.
 
-Al reconstruir el estado vigente, el consolidador avanza día por día. Si una fila deja de aparecer, lo normal es concluir que la borraron y sacarla del vigente. Pero hay otra explicación: que esa hoja no se haya podido leer ese día.
+When rebuilding the current state, the consolidator advances day by day. If a row stops appearing, the normal conclusion is that it was deleted and it should be removed from the current state. But there is another explanation: that sheet could not be read that day.
 
-Confundir ambos casos tiene una consecuencia grave. Un archivo con una hoja corrupta un martes borraría del estado vigente toda la programación de esa máquina, y el sistema no daría ninguna señal de que algo pasó.
+Confusing the two has a serious consequence. A file with a corrupt sheet on a Tuesday would erase that machine's entire schedule from the current state, and the system would give no sign that anything happened.
 
-Por eso el consolidador registra qué hojas leyó efectivamente cada día, y **solo purga llaves dentro de las hojas que sí pudo leer**. Las que faltaron se dejan intactas y quedan reportadas en `AVISOS`.
+That is why the consolidator records which sheets it actually read each day, and **only purges keys within the sheets it was able to read**. The ones that were missing are left intact and reported in `AVISOS`.
 
 ---
 
-## Ejecución
+## Running it
 
-Requiere Python 3.10 o superior.
+Requires Python 3.10 or higher.
 
 ```bash
 pip install -r requirements.txt
 
-python generar_snapshots.py   # crea 20 días de respaldos con layout variable
-python consolidador.py        # produce BD_PROGRAMACION.xlsx
+python generar_snapshots.py   # creates 20 days of backups with variable layout
+python consolidador.py        # produces BD_PROGRAMACION.xlsx
 ```
 
-El generador reproduce a propósito el problema real: cada archivo tiene las columnas en otro orden, con nombres distintos, encabezados en filas diferentes, y alguna hoja ocasionalmente ilegible. Abre un par de archivos de `snapshots/` y compáralos para verlo.
+The generator deliberately reproduces the real problem: each file has the columns in a different order, with different names, headers on different rows, and an occasionally unreadable sheet. Open a couple of files from `snapshots/` and compare them to see it.
 
-Salida típica:
+Typical output:
 
 ```
 Procesando 14 respaldos...
@@ -97,47 +97,47 @@ Hojas que no se pudieron leer:
   PROGRAMACION 07092026.xlsx / CONV.: Sin encabezados reconocibles
 ```
 
-Las hojas ilegibles aparecen reportadas y sus registros **no** se dan por eliminados.
+The program's console output is in Spanish, as in the original system. Unreadable sheets are reported and their records are **not** treated as deleted.
 
 ---
 
-## Estructura
+## Structure
 
-| Archivo | Contenido |
+| File | Contents |
 |---|---|
-| `generar_snapshots.py` | Crea los respaldos de ejemplo con layout variable |
-| `consolidador.py` | Mapeo por encabezado, versionado y reconstrucción del vigente |
+| `generar_snapshots.py` | Creates the example backups with variable layout |
+| `consolidador.py` | Header mapping, versioning and rebuilding of the current state |
 
 ---
 
-## Diferencias con la versión en producción
+## Differences from the production version
 
-| | Aquí | Producción |
+| | Here | Production |
 |---|---|---|
-| Origen | archivos generados | `.xlsm` en carpeta de red |
-| Centros de trabajo | 5 | 22 |
-| Respaldo | fuera de alcance | tarea programada diaria con reintentos |
-| Sinónimos por campo | 10 campos | 26 campos |
-| Casos especiales | ninguno | mapeo forzado para hojas con encabezados desplazados |
+| Source | generated files | `.xlsm` on a network folder |
+| Work centers | 5 | 22 |
+| Backup | out of scope | daily scheduled task with retries |
+| Synonyms per field | 10 fields | 26 fields |
+| Special cases | none | forced mapping for sheets with shifted headers |
 
-Sobre ese último punto: en el archivo real hay hojas donde los títulos están corridos una columna respecto a los datos, y otras donde los encabezados de turno viven en una fila distinta al resto. Esos casos no se resuelven con sinónimos y llevan un mapeo explícito por hoja.
-
----
-
-## Nota sobre la construcción
-
-El consolidador se desarrolló con asistencia de IA. El diseño del sistema —guardar respaldos diarios antes de necesitarlos, mapear por encabezado en vez de por posición, y no confundir una hoja ilegible con una fila borrada— responde a problemas concretos observados en la operación, y las cifras reportadas fueron verificadas contra los archivos reales.
+On that last point: in the real file there are sheets where the titles are shifted one column relative to the data, and others where the shift headers live in a different row than the rest. Those cases are not solved with synonyms and carry an explicit per-sheet mapping.
 
 ---
 
-## Posibles extensiones
+## A note on how it was built
 
-- Detección de solapamientos de tiempo entre tramos de una misma máquina
-- Alerta cuando un registro cambia más de N veces en una semana, como señal de reprogramación excesiva
-- Salida a base de datos en vez de Excel, para eliminar el límite de filas
+The consolidator was developed with AI assistance. The system's design — keeping daily backups before you need them, mapping by header instead of by position, and not confusing an unreadable sheet with a deleted row — responds to concrete problems observed in the operation, and the reported figures were verified against the real files.
 
 ---
 
-## Licencia
+## Possible extensions
+
+- Detection of time overlaps between segments of the same machine
+- Alert when a record changes more than N times in a week, as a signal of excessive rescheduling
+- Output to a database instead of Excel, to remove the row limit
+
+---
+
+## License
 
 MIT
